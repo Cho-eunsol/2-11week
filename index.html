@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>능력 찾기 게임</title>
+<style>
+     :root {
+    /* 블루 대신 회색빛 도는 네이비톤 */
+    --accent: #5b6b7d;   /* 메인 포인트: 회색+남색 톤 */
+    --accent2: #7a8b9c;  /* 서브 포인트: 한 단계 밝은 그레이블루 */
+    --bg: #000000;       /* 배경은 그대로 어둡게 유지 */
+    --text: #a7b3c2;     /* 글자는 연회색-푸른톤 */
+  }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--bg) url('background.jpg') no-repeat center center fixed;
+    background-size: cover;
+    color: var(--text);
+    font-family: Pretendard, sans-serif;
+    overflow: hidden;
+  }
+
+  /* 제목 위 안내문 */
+  .game-intro {
+    top: 50px;
+    text-align: center;
+    font-size: 1rem;
+    color: #88b0ff;
+    opacity: 0.9;
+    margin-top: 20px;
+    margin-bottom: -5px;
+    letter-spacing: 0.03em;
+    text-shadow: 0 0 6px rgba(0,150,255,0.3);
+    z-index: 50;
+    position: relative;
+  }
+
+  h1 {
+    text-align: center;
+    top: 60px;
+    margin: 10px 0 5px;
+    color: var(--accent2);
+    font-size: 1.2rem;
+    font-weight: 600;
+    position: relative;
+    z-index: 30;
+    pointer-events: none;
+    text-shadow: 0 0 10px rgba(0,180,255,0.6);
+  }
+
+  #game-area {
+    position: relative;
+    width: 100vw;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+  }
+
+  .word {
+    position: absolute;
+    font-size: 1rem;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.25s ease, color 0.25s ease, left 0.35s ease, top 0.35s ease, opacity 0.3s;
+    opacity: 0.85;
+    z-index: 10;
+    white-space: nowrap;
+    color: var(--text);
+    text-shadow: 0 0 2px rgba(0,128,255,0.2);
+  }
+
+  .word:hover {
+    color: var(--accent);
+    text-shadow: 0 0 2px rgba(0,200,255,0.8);
+  }
+
+  .target-word {
+    font-weight: 500;
+    font-size: 1.1rem;
+    color: var(--accent2);
+    text-shadow: 0 0 2px rgba(0,200,255,0.9);
+  }
+
+  /* 정답 맞췄을 때 효과 */
+  @keyframes correctPulse {
+  0%, 100% { transform: scale(1); color: #7ab8ff; text-shadow: 0 0 10px #7ab8ff; }
+  50% { transform: scale(1); color: #ffffff; text-shadow: 0 0 25px #7ab8ff; }
+}
+
+  .correct {
+    animation: correctPulse 0.7s ease forwards;
+  }
+
+  canvas#particleCanvas {
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  canvas#burstCanvas {
+    position: fixed;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    z-index: 40;
+  }
+</style>
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+  <canvas id="burstCanvas"></canvas>
+
+  <div class="game-intro">✦ 숨겨진 능력 ✦</div>
+  <h1 id="target-word">?</h1>
+
+  <div id="game-area"></div>
+
+<script>
+  const abilities = ["용기", "지혜", "열정", "창의력", "인내", "도전"];
+  const distractors = [
+    "욕심","결단","감정","성실","희망","명예","신념","배려","호기심","헌신",
+    "유혹","책임","관용","절제","관찰","근성","정의","의심","열망","신중",
+    "겸손","사랑","두려움","관심","자존심","도전정신","희생","긍정","의지",
+    "냉정","통찰","연민","상상","창조","몰입","끈기","열정","집중력",
+    "포용","도덕","정직","사고력","소통","공감","추진력","지혜","창의력",
+    "용기","인내","균형","유연함","책임감","헌신","배려심","도전","결단력"
+  ];
+
+  const colors = [
+  "#2f3e52",  // 진한 네이비그레이 (메인)
+  "#3f5065",  // 약간 밝은 톤
+  "#4e627a",  // 파란빛이 도는 중간톤
+  "#5d7390"   // 밝은 블루그레이
+];
+  const targetEl = document.getElementById('target-word');
+  const area = document.getElementById('game-area');
+  const burstCanvas = document.getElementById('burstCanvas');
+  const burstCtx = burstCanvas.getContext('2d');
+  let correctWord = "";
+
+  function resizeBurstCanvas() {
+    burstCanvas.width = window.innerWidth;
+    burstCanvas.height = window.innerHeight;
+  }
+  resizeBurstCanvas();
+  window.addEventListener('resize', resizeBurstCanvas);
+
+  function burstEffect(x, y) {
+    const particles = [];
+    for (let i = 0; i < 40; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 6,
+        vy: (Math.random() - 0.5) * 6,
+        life: 30 + Math.random() * 20,
+        size: 2 + Math.random() * 2,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+
+    const animate = () => {
+      burstCtx.clearRect(0, 0, burstCanvas.width, burstCanvas.height);
+      particles.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+        p.life--;
+        const alpha = p.life / 50;
+        burstCtx.beginPath();
+        burstCtx.fillStyle = p.color.replace(")", `,${alpha})`).replace("rgb", "rgba");
+        burstCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        burstCtx.fill();
+      });
+      if (particles.some(p => p.life > 0)) requestAnimationFrame(animate);
+    };
+    animate();
+  }
+
+  function newRound() {
+    area.innerHTML = "";
+    correctWord = abilities[Math.floor(Math.random() * abilities.length)];
+    targetEl.textContent = `${correctWord}`;
+
+    const allWords = [];
+    for (let i = 0; i < 400; i++) {
+      allWords.push(distractors[Math.floor(Math.random() * distractors.length)]);
+    }
+    allWords.push(correctWord);
+
+    const centerX = window.innerWidth / 2;
+const centerY = (window.innerHeight - 50) / 2;
+const radiusX = Math.min(window.innerWidth, window.innerHeight) * 0.45; // 가로 반지름 늘림
+const radiusY = Math.min(window.innerWidth, window.innerHeight) * 0.35; // 세로 반지름 줄임
+
+allWords.forEach(word => {
+  const w = document.createElement('div');
+  w.className = 'word';
+  w.textContent = word;
+  w.style.color = colors[Math.floor(Math.random() * colors.length)];
+
+  const r = Math.sqrt(Math.random());
+  const theta = Math.random() * Math.PI * 2;
+  const x = centerX + r * radiusX * Math.cos(theta);
+  const y = centerY + r * radiusY * Math.sin(theta);
+  w.style.left = `${x}px`;
+  w.style.top = `${y}px`;
+
+  if (word === correctWord) w.classList.add('target-word');
+
+      w.addEventListener('mouseenter', () => {
+        if (word === correctWord) return;
+        const dx = (Math.random() - 0.5) * 200;
+        const dy = (Math.random() - 0.5) * 200;
+        w.style.left = `${w.offsetLeft + dx}px`;
+        w.style.top = `${w.offsetTop + dy}px`;
+        w.style.transform = 'scale(1.15)';
+      });
+      w.addEventListener('mouseleave', () => {
+        w.style.transform = 'scale(1)';
+      });
+
+      w.addEventListener('click', (e) => {
+        if (word === correctWord) {
+          w.classList.add('correct');
+          burstEffect(e.clientX, e.clientY);
+          setTimeout(newRound, 1000);
+        } else {
+          w.style.opacity = 0.3;
+          w.style.transform = "scale(0.9)";
+        }
+      });
+
+     area.appendChild(w);
+});
+  }
+
+  newRound();
+
+  // 💫 마우스 파티클 효과
+  const canvas = document.getElementById('particleCanvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resizeCanvas();
+
+  document.addEventListener('mousemove', e => {
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: e.clientX,
+        y: e.clientY,
+        vx: (Math.random() - 0.5) * 1.2,
+        vy: (Math.random() - 0.5) * 1.2,
+        life: 25 + Math.random() * 10,
+        size: 1 + Math.random() * 1.8
+      });
+    }
+  });
+
+  function drawParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 1;
+      const alpha = Math.max(0, p.life / 25);
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(0,153,255,${alpha})`;
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    requestAnimationFrame(drawParticles);
+  }
+  drawParticles();
+</script>
+</body>
+</html>
